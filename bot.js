@@ -1,35 +1,51 @@
 // === Импорт зависимостей ===
 import { InferenceClient } from "npm:@huggingface/inference";
-import TelegramBot from "https://esm.sh/node-telegram-bot-api@0.66.0";
-import axios from "https://esm.sh/axios@1.6.7";
+import TelegramBot from "https://deno.land/x/telegram/mod.ts";
+import axios from "https://deno.land/x/axiod/mod.ts";
 
-// === Переменные окружения через Deno.env.get() ===
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
-const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
-const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY");
-const CHANNEL_ID = Deno.env.get("CHANNEL_ID");
+// === Переменные окружения ===
+const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ||
+    (() => {
+        throw new Error("Не указан TELEGRAM_BOT_TOKEN");
+    })();
+
+const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY") ||
+    (() => {
+        throw new Error("Не указан HUGGINGFACE_API_KEY");
+    })();
+
+const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY") ||
+    (() => {
+        throw new Error("Не указан UNSPLASH_ACCESS_KEY");
+    })();
+
+const CHANNEL_ID = Deno.env.get("CHANNEL_ID") ||
+    (() => {
+        throw new Error("Не указан CHANNEL_ID");
+    })();
+
 const MODEL_NAME = Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324";
-
-// === Подключение KV Storage для аналитики и данных ===
-const kv = await Deno.openKv();
 
 // === Инициализация бота ===
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, {
     polling: true,
 });
 
-// === Чтение треков и тем из KV или fallback к локальным файлам (для Deno CLI) ===
+// === Подключение KV Storage для хранения данных ===
+const kv = await Deno.openKv();
+
+// === Чтение треков и тем из KV или fallback к локальным файлам ===
 let tracks = [];
 let topics = [];
 
 try {
-    const tracksJson = await kv.get(["tracks"]);
-    const topicsJson = await kv.get(["topics"]);
+    const tracksEntry = await kv.get(["tracks"]);
+    const topicsEntry = await kv.get(["topics"]);
 
-    tracks = tracksJson.value || JSON.parse(Deno.readTextFileSync("tracks.json"));
-    topics = topicsJson.value || JSON.parse(Deno.readTextFileSync("topics.json"));
+    tracks = tracksEntry.value || JSON.parse(Deno.readTextFileSync("tracks.json"));
+    topics = topicsEntry.value || JSON.parse(Deno.readTextFileSync("topics.json"));
 
-    // Сохраняем в KV, чтобы не читать файлы каждый раз
+    // Сохраняем в KV, чтобы не читать каждый раз файлы
     await kv.set(["tracks"], tracks);
     await kv.set(["topics"], topics);
 } catch (e) {
@@ -51,7 +67,7 @@ async function saveUsedTopic(topic) {
     }
 }
 
-async function getRandomUnusedTopic() {
+ async function getRandomUnusedTopic() {
     const used = await getUsedTopics();
     const available = topics.filter((t) => !used.includes(t));
     if (available.length === 0) {
@@ -145,17 +161,21 @@ const mainMenuOptions = {
     },
 };
 
-bot.onText(/\/menu/, async (msg) => {
+bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    await bot.sendMessage(chatId, "Выбери, что хочешь узнать:", mainMenuOptions);
-});
 
-bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
-    await bot.sendMessage(
-        chatId,
-        "👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал."
-    );
+    if (msg.text === "/start") {
+        await bot.sendMessage(chatId, "👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал.");
+    } else if (msg.text === "/menu") {
+        await bot.sendMessage(chatId, "Выбери, что хочешь узнать:", mainMenuOptions);
+    } else if (msg.text === "/advice") {
+        const advice = await getFlowAdvice();
+        await bot.sendMessage(chatId, advice);
+    } else if (msg.text?.startsWith("/lyrics ")) {
+        const theme = msg.text.replace("/lyrics ", "");
+        const lyrics = await generateLyrics(theme);
+        await bot.sendMessage(chatId, `🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
+    }
 });
 
 bot.on("callback_query", async (query) => {
@@ -225,34 +245,42 @@ async function saveAnalytics(data) {
 }
 
 // === Команда /advice ===
-bot.onText(/\/advice/, async (msg) => {
+bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const analytics = await loadAnalytics();
 
-    if (!analytics.users.includes(chatId)) {
-        analytics.users.push(chatId);
+    if (msg.text === "/advice") {
+        const analytics = await loadAnalytics();
+
+        if (!analytics.users.includes(chatId)) {
+            analytics.users.push(chatId);
+        }
+
+        analytics.commands_used.advice += 1;
+        await saveAnalytics(analytics);
+
+        const advice = await getFlowAdvice();
+        await bot.sendMessage(chatId, advice);
     }
-    analytics.commands_used.advice += 1;
-    await saveAnalytics(analytics);
-
-    const advice = await getFlowAdvice();
-    await bot.sendMessage(chatId, advice);
 });
 
 // === Команда /lyrics ===
-bot.onText(/\/lyrics (.+)/, async (msg, match) => {
+bot.on("message", async (msg) => {
     const chatId = msg.chat.id;
-    const theme = match[1];
-    const analytics = await loadAnalytics();
 
-    if (!analytics.users.includes(chatId)) {
-        analytics.users.push(chatId);
+    if (msg.text?.startsWith("/lyrics ")) {
+        const theme = msg.text.replace("/lyrics ", "");
+        const analytics = await loadAnalytics();
+
+        if (!analytics.users.includes(chatId)) {
+            analytics.users.push(chatId);
+        }
+
+        analytics.commands_used.lyrics += 1;
+        await saveAnalytics(analytics);
+
+        const lyrics = await generateLyrics(theme);
+        await bot.sendMessage(chatId, `🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
     }
-    analytics.commands_used.lyrics += 1;
-    await saveAnalytics(analytics);
-
-    const lyrics = await generateLyrics(theme);
-    await bot.sendMessage(chatId, `🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
 });
 
 // === Генерация текста под трек ===
@@ -274,8 +302,5 @@ async function generateLyrics(theme) {
 // === Запуск по расписанию (раз в день в 10:00) ===
 console.log("⏰ Бот запущен и ожидает...");
 
-// Для Deno Deploy Cron Triggers:
-// https://deno.com/deploy/docs/runtime-cron-jobs
-
-// === Ручной запуск для тестирования ===
+// Для тестирования
 await postToChannel();
