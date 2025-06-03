@@ -25,7 +25,7 @@ jobs:
 
       - name: Установка deployctl
         run: |
-          deno install -gAr jsr:@deno/deployctl
+          deno install -gAr https://deno.land/x/deploy/deployctl.ts 
 
       - name: Деплой на Deno Deploy
         run: |
