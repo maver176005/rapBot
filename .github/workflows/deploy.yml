@@ -23,8 +23,6 @@ jobs:
       - name: Проверка версии Deno
         run: deno --version
 
-      - name: обновление версии Deno
-        run: deno upgrade
 
       - name: Установка deployctl
         run: |
