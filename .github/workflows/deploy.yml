@@ -16,7 +16,7 @@ jobs:
 
       - name: Install deployctl
         run: |
-          deno install -A -r https://raw.githubusercontent.com/denoland/deployctl/main/src/deployctl.ts
+          deno install -gAr https://deno.land/x/deploy/deployctl.ts
 
       - name: Deploy to Deno Deploy
         run: |
