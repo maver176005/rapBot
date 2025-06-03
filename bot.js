@@ -12,7 +12,7 @@ dotenv.config();
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
-const CHANNEL_ID = process.env.CHANNEL_ID || "-1001234567890"; // или @aurumusik
+const CHANNEL_ID = process.env.CHANNEL_ID 
 const MODEL_NAME = process.env.MODEL_NAME || "deepseek-ai/DeepSeek-V3-0324";
 
 // === Инициализация бота ===
