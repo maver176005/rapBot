@@ -1,7 +1,7 @@
 import { InferenceClient } from "@huggingface/inference";
 import TelegramBot from "node-telegram-bot-api";
 import axios from "axios";
-import fs from "fs";
+import fs from "node:fs";
 import schedule from "node-schedule";
 
 // === Загрузка переменных окружения ===
@@ -25,8 +25,8 @@ let tracks = [];
 let topics = [];
 
 try {
-    tracks = JSON.parse(fs.readFileSync("tracks.json"));
-    topics = JSON.parse(fs.readFileSync("topics.json"));
+    tracks = JSON.parse(Deno.readTextFileSync("tracks.json"));
+    topics = JSON.parse(Deno.readTextFileSync("topics.json"));
 } catch (e) {
     console.error("Ошибка чтения файлов tracks.json или topics.json");
     process.exit(1);
@@ -37,7 +37,7 @@ const USED_TOPICS_FILE = "used_topics.json";
 
 function getUsedTopics() {
     if (!fs.existsSync(USED_TOPICS_FILE)) return [];
-    return JSON.parse(fs.readFileSync(USED_TOPICS_FILE));
+    return JSON.parse(Deno.readTextFileSync(USED_TOPICS_FILE));
 }
 
 function saveUsedTopic(topic) {
@@ -215,7 +215,7 @@ function loadAnalytics() {
     if (!fs.existsSync("analytics.json")) {
         fs.writeFileSync("analytics.json", JSON.stringify({ users: [], commands_used: { advice: 0, lyrics: 0 } }));
     }
-    return JSON.parse(fs.readFileSync("analytics.json"));
+    return JSON.parse(Deno.readTextFileSync("analytics.json"));
 }
 
 function saveAnalytics(data) {
