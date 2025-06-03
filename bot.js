@@ -1,35 +1,20 @@
 // === Импорт зависимостей ===
+import { Bot } from "https://deno.land/x/grammy/mod.ts";
 import { InferenceClient } from "npm:@huggingface/inference";
-import { TelegramBot } from "https://deno.land/x/telegram_bot/mod.ts";
-import {axiod} from "https://deno.land/x/axiod/mod.ts";
-
+import axios from "https://deno.land/x/axiod/mod.ts";
+import { load } from "https://deno.land/x/dotenv/mod.ts";
+await load();
 // === Переменные окружения ===
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ||
-    (() => {
-        throw new Error("Не указан TELEGRAM_BOT_TOKEN");
-    })();
-
-const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY") ||
-    (() => {
-        throw new Error("Не указан HUGGINGFACE_API_KEY");
-    })();
-
-const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY") ||
-    (() => {
-        throw new Error("Не указан UNSPLASH_ACCESS_KEY");
-    })();
-
-const CHANNEL_ID = Deno.env.get("CHANNEL_ID") ||
-    (() => {
-        throw new Error("Не указан CHANNEL_ID");
-    })();
-
+const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
+const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
+const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY");
+const CHANNEL_ID = Deno.env.get("CHANNEL_ID");
 const MODEL_NAME = Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324";
 
-// === Инициализация бота ===
-const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, {
-    polling: true,
-});
+if (!TELEGRAM_BOT_TOKEN) throw new Error("Не указан TELEGRAM_BOT_TOKEN");
+
+// === Инициализация бота через Grammy ===
+const bot = new Bot(TELEGRAM_BOT_TOKEN);
 
 // === Подключение KV Storage для хранения данных ===
 const kv = await Deno.openKv();
@@ -67,7 +52,7 @@ async function saveUsedTopic(topic) {
     }
 }
 
- async function getRandomUnusedTopic() {
+async function getRandomUnusedTopic() {
     const used = await getUsedTopics();
     const available = topics.filter((t) => !used.includes(t));
     if (available.length === 0) {
@@ -101,11 +86,6 @@ async function generateRapPost(topic) {
     }
 }
 
-// === Выбор случайного трека ===
-function getRandomTrack() {
-    return tracks[Math.floor(Math.random() * tracks.length)];
-}
-
 // === Получение случайного изображения с Unsplash ===
 async function getRandomImageUrl() {
     const UNSPLASH_URL = "https://api.unsplash.com/photos/random";
@@ -116,7 +96,7 @@ async function getRandomImageUrl() {
     };
 
     try {
-        const response = await axiod.get(UNSPLASH_URL, { params });
+        const response = await axios.get(UNSPLASH_URL, { params });
         return response.data.urls.regular;
     } catch (error) {
         console.error("🖼️ Не удалось загрузить изображение:", error.message);
@@ -130,15 +110,15 @@ async function postToChannel() {
     console.log(`🧠 Генерация поста на тему: "${topic}"`);
 
     const postText = await generateRapPost(topic);
-    const track = getRandomTrack();
+    const track = tracks[Math.floor(Math.random() * tracks.length)];
     const imageUrl = await getRandomImageUrl();
 
     console.log("📬 Отправка в канал...");
 
     try {
-        await bot.sendPhoto(CHANNEL_ID, imageUrl);
-        await bot.sendMessage(CHANNEL_ID, postText);
-        await bot.sendMessage(
+        await bot.api.sendPhoto(CHANNEL_ID, imageUrl);
+        await bot.api.sendMessage(CHANNEL_ID, postText);
+        await bot.api.sendMessage(
             CHANNEL_ID,
             `🎧 Слушай мой новый трек:\n${track.title}\n${track.link}`
         );
@@ -149,62 +129,59 @@ async function postToChannel() {
     }
 }
 
-// === Кнопки меню ===
-const mainMenuOptions = {
-    reply_markup: {
-        inline_keyboard: [
-            [{ text: "🎤 Совет по Flow", callback_data: "flow_advice" }],
-            [{ text: "📝 Как писать тексты", callback_data: "writing_tips" }],
-            [{ text: "💬 Идеи для рифм", callback_data: "rhyme_ideas" }],
-            [{ text: "🎧 Топ треков", callback_data: "top_tracks" }],
-        ],
-    },
-};
-
-bot.on("message", async (msg) => {
-    const chatId = msg.chat.id;
-
-    if (msg.text === "/start") {
-        await bot.sendMessage(chatId, "👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал.");
-    } else if (msg.text === "/menu") {
-        await bot.sendMessage(chatId, "Выбери, что хочешь узнать:", mainMenuOptions);
-    } else if (msg.text === "/advice") {
-        const advice = await getFlowAdvice();
-        await bot.sendMessage(chatId, advice);
-    } else if (msg.text?.startsWith("/lyrics ")) {
-        const theme = msg.text.replace("/lyrics ", "");
-        const lyrics = await generateLyrics(theme);
-        await bot.sendMessage(chatId, `🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
-    }
+// === Команды бота ===
+bot.command("start", async (ctx) => {
+    await ctx.reply("👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал.");
 });
 
-bot.on("callback_query", async (query) => {
-    const chatId = query.message.chat.id;
-    const data = query.data;
-
-    let response = "";
-
-    switch (data) {
-        case "flow_advice":
-            response = await getFlowAdvice();
-            break;
-        case "writing_tips":
-            response = await getWritingTips();
-            break;
-        case "rhyme_ideas":
-            response = await getRhymeIdeas();
-            break;
-        case "top_tracks":
-            response = `🎧 Вот топ треков:\n${tracks.map((t) => `- ${t.title} → ${t.link}`).join("\n")}`;
-            break;
-        default:
-            response = "Неизвестная команда.";
-    }
-
-    await bot.sendMessage(chatId, response);
+bot.command("menu", async (ctx) => {
+    await ctx.reply("Выбери, что хочешь узнать:");
+    // Здесь можно добавить инлайн-кнопки
 });
 
-// === Генерация советов ===
+bot.command("advice", async (ctx) => {
+    const analytics = await loadAnalytics();
+    const chatId = ctx.chat.id;
+
+    if (!analytics.users.includes(chatId)) {
+        analytics.users.push(chatId);
+    }
+
+    analytics.commands_used.advice += 1;
+    await saveAnalytics(analytics);
+
+    const advice = await getFlowAdvice();
+    await ctx.reply(advice);
+});
+
+bot.command("lyrics", async (ctx) => {
+    const analytics = await loadAnalytics();
+    const chatId = ctx.chat.id;
+    const theme = ctx.match || "рэп";
+
+    if (!analytics.users.includes(chatId)) {
+        analytics.users.push(chatId);
+    }
+
+    analytics.commands_used.lyrics += 1;
+    await saveAnalytics(analytics);
+
+    const lyrics = await generateLyrics(theme);
+    await ctx.reply(`🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
+});
+
+// === Аналитика использования команд ===
+async function loadAnalytics() {
+    const entry = await kv.get(["analytics"]);
+    const data = entry.value || { users: [], commands_used: { advice: 0, lyrics: 0 } };
+    return data;
+}
+
+async function saveAnalytics(data) {
+    await kv.set(["analytics"], data);
+}
+
+// === Генерация AI-ответа ===
 async function getFlowAdvice() {
     return await generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
 }
@@ -217,7 +194,6 @@ async function getRhymeIdeas() {
     return await generateAIResponse("Придумай 5 строк с рифмой на слово 'ночь'.");
 }
 
-// === Генерация AI-ответа ===
 async function generateAIResponse(prompt) {
     try {
         const response = await hfClient.chatCompletion({
@@ -233,74 +209,9 @@ async function generateAIResponse(prompt) {
     }
 }
 
-// === Аналитика использования команд ===
-async function loadAnalytics() {
-    const entry = await kv.get(["analytics"]);
-    const data = entry.value || { users: [], commands_used: { advice: 0, lyrics: 0 } };
-    return data;
-}
-
-async function saveAnalytics(data) {
-    await kv.set(["analytics"], data);
-}
-
-// === Команда /advice ===
-bot.on("message", async (msg) => {
-    const chatId = msg.chat.id;
-
-    if (msg.text === "/advice") {
-        const analytics = await loadAnalytics();
-
-        if (!analytics.users.includes(chatId)) {
-            analytics.users.push(chatId);
-        }
-
-        analytics.commands_used.advice += 1;
-        await saveAnalytics(analytics);
-
-        const advice = await getFlowAdvice();
-        await bot.sendMessage(chatId, advice);
-    }
-});
-
-// === Команда /lyrics ===
-bot.on("message", async (msg) => {
-    const chatId = msg.chat.id;
-
-    if (msg.text?.startsWith("/lyrics ")) {
-        const theme = msg.text.replace("/lyrics ", "");
-        const analytics = await loadAnalytics();
-
-        if (!analytics.users.includes(chatId)) {
-            analytics.users.push(chatId);
-        }
-
-        analytics.commands_used.lyrics += 1;
-        await saveAnalytics(analytics);
-
-        const lyrics = await generateLyrics(theme);
-        await bot.sendMessage(chatId, `🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
-    }
-});
-
-// === Генерация текста под трек ===
-async function generateLyrics(theme) {
-    try {
-        const response = await hfClient.chatCompletion({
-            model: MODEL_NAME,
-            messages: [{ role: "user", content: `Напиши несколько строчек рэпа на тему: ${theme}` }],
-            max_tokens: 200,
-        });
-
-        return response.choices[0].message.content;
-    } catch (err) {
-        console.error("❌ Ошибка генерации текста:", err.message);
-        return "Не удалось сгенерировать текст.";
-    }
-}
-
-// === Запуск по расписанию (раз в день в 10:00) ===
+// === Запуск бота ===
+await bot.start();
 console.log("⏰ Бот запущен и ожидает...");
 
-// Для тестирования
+// Для тестирования:
 await postToChannel();
