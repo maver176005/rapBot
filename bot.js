@@ -12,7 +12,7 @@ dotenv.config();
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
 const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
-const CHANNEL_ID = process.env.CHANNEL_ID 
+const CHANNEL_ID = process.env.CHANNEL_ID
 const MODEL_NAME = process.env.MODEL_NAME || "deepseek-ai/DeepSeek-V3-0324";
 
 // === Инициализация бота ===
@@ -271,10 +271,10 @@ async function generateLyrics(theme) {
 
 // === Запуск по расписанию (раз в день в 10:00) ===
 console.log("⏰ Бот запущен и ожидает...");
-// schedule.scheduleJob("0 10 * * *", () => {
-//     console.log("🕒 Пришло время публиковать новый пост!");
-//     postToChannel();
-// });
+schedule.scheduleJob("0 10 * * *", () => {
+    console.log("🕒 Пришло время публиковать новый пост!");
+    postToChannel();
+});
 
 // === Ручной запуск для тестирования ===
-postToChannel();
+// postToChannel();
