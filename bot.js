@@ -1,11 +1,9 @@
 // === Импорт зависимостей ===
+import * as dotenv from "https://deno.land/std@0.208.0/dotenv/mod.ts";
+await dotenv.load(); // загружаем .env в Deno.env
+
 import { Bot } from "https://deno.land/x/grammy@v1.36.3/mod.ts";
 import { InferenceClient } from "npm:@huggingface/inference";
-import {axios} from "https://deno.land/x/axiod@v2.0.0/mod.ts";
-import { loadSync } from "https://deno.land/x/dotenv@v3.1.0/load.ts";
-
-// === Загрузка .env файла ===
-loadSync();
 
 // === Переменные окружения ===
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
@@ -14,7 +12,9 @@ const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY");
 const CHANNEL_ID = Deno.env.get("CHANNEL_ID");
 const MODEL_NAME = Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324";
 
-if (!TELEGRAM_BOT_TOKEN) throw new Error("Не указан TELEGRAM_BOT_TOKEN");
+if (!TELEGRAM_BOT_TOKEN) {
+    throw new Error("Не указан TELEGRAM_BOT_TOKEN в .env");
+}
 
 // === Инициализация бота через Grammy ===
 const bot = new Bot(TELEGRAM_BOT_TOKEN);
@@ -60,7 +60,7 @@ async function getRandomUnusedTopic() {
     const available = topics.filter((t) => !used.includes(t));
     if (available.length === 0) {
         await kv.set(["used_topics"], []);
-        return topics[Math.floor(Math.random() * tracks.length)];
+        return topics[Math.floor(Math.random() * topics.length)];
     }
     return available[Math.floor(Math.random() * available.length)];
 }
@@ -89,18 +89,26 @@ async function generateRapPost(topic) {
     }
 }
 
-// === Получение случайного изображения с Unsplash ===
+// === Получение случайного изображения с Unsplash (через fetch) ===
 async function getRandomImageUrl() {
     const UNSPLASH_URL = "https://api.unsplash.com/photos/random";
-    const params = {
+    const params = new URLSearchParams({
         query: "music hiphop rhythm beats",
-        client_id: UNSPLASH_ACCESS_KEY,
-        orientation: "landscape",
-    };
+        orientation: "landscape"
+    });
 
     try {
-        const response = await axios.get(UNSPLASH_URL, { params });
-        return response.data.urls.regular;
+        const response = await fetch(`${UNSPLASH_URL}?${params}`, {
+            headers: {
+                Authorization: `Client-ID ${UNSPLASH_ACCESS_KEY}`,
+            },
+            method: "GET"
+        });
+
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+        const data = await response.json();
+        return data.urls.regular;
     } catch (error) {
         console.error("🖼️ Не удалось загрузить изображение:", error.message);
         return "https://images.unsplash.com/photo-1519389950473-47ba0277781c?ixlib=rb-4.0.3&auto=format&w=600&q=60";
@@ -132,7 +140,7 @@ async function postToChannel() {
     }
 }
 
-// === Аналитика использования команд ===
+// === Аналитика использования команд через KV ===
 async function loadAnalytics() {
     const entry = await kv.get(["analytics"]);
     const data = entry.value || { users: [], commands_used: { advice: 0, lyrics: 0 } };
@@ -144,18 +152,6 @@ async function saveAnalytics(data) {
 }
 
 // === Генерация AI-ответа ===
-async function getFlowAdvice() {
-    return await generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
-}
-
-async function getWritingTips() {
-    return await generateAIResponse("Как правильно начать писать тексты к песням? Советы для новичков.");
-}
-
-async function getRhymeIdeas() {
-    return await generateAIResponse("Придумай 5 строк с рифмой на слово 'ночь'.");
-}
-
 async function generateAIResponse(prompt) {
     try {
         const response = await hfClient.chatCompletion({
@@ -169,6 +165,19 @@ async function generateAIResponse(prompt) {
         console.error("❌ Ошибка генерации через HuggingFace:", err.message);
         return "Произошла ошибка при генерации текста.";
     }
+}
+
+// === Генерация советов ===
+async function getFlowAdvice() {
+    return await generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
+}
+
+async function getWritingTips() {
+    return await generateAIResponse("Как правильно начать писать тексты к песням? Советы для новичков.");
+}
+
+async function getRhymeIdeas() {
+    return await generateAIResponse("Придумай 5 строк с рифмой на слово 'ночь'.");
 }
 
 // === Команды бота ===
@@ -215,7 +224,7 @@ async function generateLyrics(theme) {
     try {
         const response = await hfClient.chatCompletion({
             model: MODEL_NAME,
-            messages: [{ role: "user", content: `Напиши несколько строчек рэпа на тему: ${theme}` }],
+            messages: [{role: "user", content: `Напиши несколько строчек рэпа на тему: ${theme}`}],
             max_tokens: 200,
         });
 
@@ -224,11 +233,12 @@ async function generateLyrics(theme) {
         console.error("❌ Ошибка генерации текста:", err.message);
         return "Не удалось сгенерировать текст.";
     }
-}
+
 
 // === Запуск бота ===
-await bot.start();
-console.log("⏰ Бот запущен и ожидает...");
+    await bot.start();
+    console.log("⏰ Бот запущен и ожидает...");
 
 // Для тестирования:
-await postToChannel();
+    await postToChannel();
+}
