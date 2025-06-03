@@ -1,9 +1,12 @@
 // === Импорт зависимостей ===
-import { Bot } from "https://deno.land/x/grammy/mod.ts";
+import { Bot } from "https://deno.land/x/grammy@v1.36.3/mod.ts";
 import { InferenceClient } from "npm:@huggingface/inference";
-import axios from "https://deno.land/x/axiod/mod.ts";
-import { load } from "https://deno.land/x/dotenv/mod.ts";
-await load();
+import {axios} from "https://deno.land/x/axiod@v2.0.0/mod.ts";
+import { loadSync } from "https://deno.land/x/dotenv@v3.1.0/load.ts";
+
+// === Загрузка .env файла ===
+loadSync();
+
 // === Переменные окружения ===
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
@@ -57,7 +60,7 @@ async function getRandomUnusedTopic() {
     const available = topics.filter((t) => !used.includes(t));
     if (available.length === 0) {
         await kv.set(["used_topics"], []);
-        return topics[Math.floor(Math.random() * topics.length)];
+        return topics[Math.floor(Math.random() * tracks.length)];
     }
     return available[Math.floor(Math.random() * available.length)];
 }
@@ -129,47 +132,6 @@ async function postToChannel() {
     }
 }
 
-// === Команды бота ===
-bot.command("start", async (ctx) => {
-    await ctx.reply("👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал.");
-});
-
-bot.command("menu", async (ctx) => {
-    await ctx.reply("Выбери, что хочешь узнать:");
-    // Здесь можно добавить инлайн-кнопки
-});
-
-bot.command("advice", async (ctx) => {
-    const analytics = await loadAnalytics();
-    const chatId = ctx.chat.id;
-
-    if (!analytics.users.includes(chatId)) {
-        analytics.users.push(chatId);
-    }
-
-    analytics.commands_used.advice += 1;
-    await saveAnalytics(analytics);
-
-    const advice = await getFlowAdvice();
-    await ctx.reply(advice);
-});
-
-bot.command("lyrics", async (ctx) => {
-    const analytics = await loadAnalytics();
-    const chatId = ctx.chat.id;
-    const theme = ctx.match || "рэп";
-
-    if (!analytics.users.includes(chatId)) {
-        analytics.users.push(chatId);
-    }
-
-    analytics.commands_used.lyrics += 1;
-    await saveAnalytics(analytics);
-
-    const lyrics = await generateLyrics(theme);
-    await ctx.reply(`🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
-});
-
 // === Аналитика использования команд ===
 async function loadAnalytics() {
     const entry = await kv.get(["analytics"]);
@@ -206,6 +168,61 @@ async function generateAIResponse(prompt) {
     } catch (err) {
         console.error("❌ Ошибка генерации через HuggingFace:", err.message);
         return "Произошла ошибка при генерации текста.";
+    }
+}
+
+// === Команды бота ===
+bot.command("start", async (ctx) => {
+    await ctx.reply("👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал.");
+});
+
+bot.command("menu", async (ctx) => {
+    await ctx.reply("Выбери, что хочешь узнать:");
+});
+
+bot.command("advice", async (ctx) => {
+    const analytics = await loadAnalytics();
+    const chatId = ctx.chat.id;
+
+    if (!analytics.users.includes(chatId)) {
+        analytics.users.push(chatId);
+    }
+
+    analytics.commands_used.advice += 1;
+    await saveAnalytics(analytics);
+
+    const advice = await getFlowAdvice();
+    await ctx.reply(advice);
+});
+
+bot.command("lyrics", async (ctx) => {
+    const analytics = await loadAnalytics();
+    const chatId = ctx.chat.id;
+    const theme = ctx.match || "рэп";
+
+    if (!analytics.users.includes(chatId)) {
+        analytics.users.push(chatId);
+    }
+
+    analytics.commands_used.lyrics += 1;
+    await saveAnalytics(analytics);
+
+    const lyrics = await generateLyrics(theme);
+    await ctx.reply(`🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
+});
+
+async function generateLyrics(theme) {
+    try {
+        const response = await hfClient.chatCompletion({
+            model: MODEL_NAME,
+            messages: [{ role: "user", content: `Напиши несколько строчек рэпа на тему: ${theme}` }],
+            max_tokens: 200,
+        });
+
+        return response.choices[0].message.content;
+    } catch (err) {
+        console.error("❌ Ошибка генерации текста:", err.message);
+        return "Не удалось сгенерировать текст.";
     }
 }
 
