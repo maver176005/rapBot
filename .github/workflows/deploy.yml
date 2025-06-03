@@ -23,6 +23,9 @@ jobs:
       - name: Проверка версии Deno
         run: deno --version
 
+      - name: обновление версии Deno
+        run: deno upgrade
+
       - name: Установка deployctl
         run: |
           deno install -gAr https://deno.land/x/deploy/deployctl.ts 
