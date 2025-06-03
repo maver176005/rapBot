@@ -18,6 +18,9 @@ jobs:
         run: |
           deno install -gAr https://deno.land/x/deploy/deployctl.ts
 
+- name: update deployctl
+        run: |
+          deno upgrade
       - name: Deploy to Deno Deploy
         run: |
           deployctl deploy \
