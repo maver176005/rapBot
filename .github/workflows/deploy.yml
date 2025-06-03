@@ -1,23 +1,36 @@
-name: Deploy to Deno
+name: Deploy to Deno Deploy
 
 on:
   push:
     branches:
-      - main
+      - main # или любая другая ветка
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout кода
+        uses: actions/checkout@v4
 
-      - name: Install deployctl
+      - name: Установка Deno
         run: |
-          deno install -A -r https://raw.githubusercontent.com/denoland/deployctl/main/src/deployctl.ts 
+          curl -fsSL https://deno.land/install.sh  | sh
 
-      - name: Deploy to Deno Deploy
+      - name: Добавление Deno в PATH
+        run: echo "$HOME/.deno/bin" >> $GITHUB_PATH
+
+      - name: Проверка версии Deno
+        run: deno --version
+
+      - name: обновление версии Deno
+        run: deno upgrade
+
+      - name: Установка deployctl
+        run: |
+          deno install -gAr https://deno.land/x/deploy/deployctl.ts 
+
+      - name: Деплой на Deno Deploy
         run: |
           deployctl deploy \
             --project=rap-poster-bot \
