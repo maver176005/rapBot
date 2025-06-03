@@ -1,63 +1,68 @@
-import { InferenceClient } from "@huggingface/inference";
-import TelegramBot from "node-telegram-bot-api";
-import axios from "axios";
-import fs from "node:fs";
-import schedule from "node-schedule";
+// === Импорт зависимостей ===
+import { InferenceClient } from "npm:@huggingface/inference";
+import TelegramBot from "https://esm.sh/node-telegram-bot-api@0.66.0";
+import axios from "https://esm.sh/axios@1.6.7";
 
-// === Загрузка переменных окружения ===
-import dotenv from "dotenv";
-dotenv.config();
+// === Переменные окружения через Deno.env.get() ===
+const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
+const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
+const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY");
+const CHANNEL_ID = Deno.env.get("CHANNEL_ID");
+const MODEL_NAME = Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324";
 
-// === ТОКЕНЫ И ID КАНАЛА ===
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const HUGGINGFACE_API_KEY = process.env.HUGGINGFACE_API_KEY;
-const UNSPLASH_ACCESS_KEY = process.env.UNSPLASH_ACCESS_KEY;
-const CHANNEL_ID = process.env.CHANNEL_ID
-const MODEL_NAME = process.env.MODEL_NAME || "deepseek-ai/DeepSeek-V3-0324";
+// === Подключение KV Storage для аналитики и данных ===
+const kv = await Deno.openKv();
 
 // === Инициализация бота ===
 const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, {
-    polling: true
+    polling: true,
 });
 
-// === Чтение треков и тем ===
+// === Чтение треков и тем из KV или fallback к локальным файлам (для Deno CLI) ===
 let tracks = [];
 let topics = [];
 
 try {
-    tracks = JSON.parse(Deno.readTextFileSync("tracks.json"));
-    topics = JSON.parse(Deno.readTextFileSync("topics.json"));
+    const tracksJson = await kv.get(["tracks"]);
+    const topicsJson = await kv.get(["topics"]);
+
+    tracks = tracksJson.value || JSON.parse(Deno.readTextFileSync("tracks.json"));
+    topics = topicsJson.value || JSON.parse(Deno.readTextFileSync("topics.json"));
+
+    // Сохраняем в KV, чтобы не читать файлы каждый раз
+    await kv.set(["tracks"], tracks);
+    await kv.set(["topics"], topics);
 } catch (e) {
-    console.error("Ошибка чтения файлов tracks.json или topics.json");
-    process.exit(1);
+    console.error("Ошибка чтения файлов tracks.json или topics.json", e.message);
+    Deno.exit(1);
 }
 
-// === Хранение использованных тем ===
-const USED_TOPICS_FILE = "used_topics.json";
-
-function getUsedTopics() {
-    if (!fs.existsSync(USED_TOPICS_FILE)) return [];
-    return JSON.parse(Deno.readTextFileSync(USED_TOPICS_FILE));
+// === Хранение использованных тем через KV ===
+async function getUsedTopics() {
+    const entry = await kv.get(["used_topics"]);
+    return entry.value || [];
 }
 
-function saveUsedTopic(topic) {
-    let used = getUsedTopics();
-    used.push(topic);
-    fs.writeFileSync(USED_TOPICS_FILE, JSON.stringify(used, null, 2));
+async function saveUsedTopic(topic) {
+    const used = await getUsedTopics();
+    if (!used.includes(topic)) {
+        used.push(topic);
+        await kv.set(["used_topics"], used);
+    }
 }
 
-function getRandomUnusedTopic() {
-    const used = getUsedTopics();
+async function getRandomUnusedTopic() {
+    const used = await getUsedTopics();
     const available = topics.filter((t) => !used.includes(t));
     if (available.length === 0) {
-        fs.writeFileSync(USED_TOPICS_FILE, "[]");
+        await kv.set(["used_topics"], []);
         return topics[Math.floor(Math.random() * topics.length)];
     }
     return available[Math.floor(Math.random() * available.length)];
 }
 
 // === Генерация текста про рэп ===
-const hfClient = new InferenceClient( `${HUGGINGFACE_API_KEY}`);
+const hfClient = new InferenceClient(HUGGINGFACE_API_KEY);
 
 async function generateRapPost(topic) {
     try {
@@ -105,7 +110,7 @@ async function getRandomImageUrl() {
 
 // === Публикация в Telegram канале ===
 async function postToChannel() {
-    const topic = getRandomUnusedTopic();
+    const topic = await getRandomUnusedTopic();
     console.log(`🧠 Генерация поста на тему: "${topic}"`);
 
     const postText = await generateRapPost(topic);
@@ -121,7 +126,7 @@ async function postToChannel() {
             CHANNEL_ID,
             `🎧 Слушай мой новый трек:\n${track.title}\n${track.link}`
         );
-        saveUsedTopic(topic);
+        await saveUsedTopic(topic);
         console.log("✅ Пост успешно опубликован!");
     } catch (error) {
         console.error("❌ Ошибка отправки в Telegram:", error.message);
@@ -147,12 +152,10 @@ bot.onText(/\/menu/, async (msg) => {
 
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
-    await bot.sendMessage(chatId, "👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал.");
-});
-
-bot.onText(/\/advice/, async (msg) => {
-    const advice = await getFlowAdvice();
-    await bot.sendMessage(msg.chat.id, advice);
+    await bot.sendMessage(
+        chatId,
+        "👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал."
+    );
 });
 
 bot.on("callback_query", async (query) => {
@@ -183,15 +186,15 @@ bot.on("callback_query", async (query) => {
 
 // === Генерация советов ===
 async function getFlowAdvice() {
-    return generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
+    return await generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
 }
 
 async function getWritingTips() {
-    return generateAIResponse("Как правильно начать писать тексты к песням? Советы для новичков.");
+    return await generateAIResponse("Как правильно начать писать тексты к песням? Советы для новичков.");
 }
 
 async function getRhymeIdeas() {
-    return generateAIResponse("Придумай 5 строк с рифмой на слово 'ночь'.");
+    return await generateAIResponse("Придумай 5 строк с рифмой на слово 'ночь'.");
 }
 
 // === Генерация AI-ответа ===
@@ -211,27 +214,26 @@ async function generateAIResponse(prompt) {
 }
 
 // === Аналитика использования команд ===
-function loadAnalytics() {
-    if (!fs.existsSync("analytics.json")) {
-        fs.writeFileSync("analytics.json", JSON.stringify({ users: [], commands_used: { advice: 0, lyrics: 0 } }));
-    }
-    return JSON.parse(Deno.readTextFileSync("analytics.json"));
+async function loadAnalytics() {
+    const entry = await kv.get(["analytics"]);
+    const data = entry.value || { users: [], commands_used: { advice: 0, lyrics: 0 } };
+    return data;
 }
 
-function saveAnalytics(data) {
-    fs.writeFileSync("analytics.json", JSON.stringify(data, null, 2));
+async function saveAnalytics(data) {
+    await kv.set(["analytics"], data);
 }
 
 // === Команда /advice ===
 bot.onText(/\/advice/, async (msg) => {
     const chatId = msg.chat.id;
-    const analytics = loadAnalytics();
+    const analytics = await loadAnalytics();
 
     if (!analytics.users.includes(chatId)) {
         analytics.users.push(chatId);
     }
     analytics.commands_used.advice += 1;
-    saveAnalytics(analytics);
+    await saveAnalytics(analytics);
 
     const advice = await getFlowAdvice();
     await bot.sendMessage(chatId, advice);
@@ -241,13 +243,13 @@ bot.onText(/\/advice/, async (msg) => {
 bot.onText(/\/lyrics (.+)/, async (msg, match) => {
     const chatId = msg.chat.id;
     const theme = match[1];
-    const analytics = loadAnalytics();
+    const analytics = await loadAnalytics();
 
     if (!analytics.users.includes(chatId)) {
         analytics.users.push(chatId);
     }
     analytics.commands_used.lyrics += 1;
-    saveAnalytics(analytics);
+    await saveAnalytics(analytics);
 
     const lyrics = await generateLyrics(theme);
     await bot.sendMessage(chatId, `🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
@@ -271,10 +273,9 @@ async function generateLyrics(theme) {
 
 // === Запуск по расписанию (раз в день в 10:00) ===
 console.log("⏰ Бот запущен и ожидает...");
-// schedule.scheduleJob("0 10 * * *", () => {
-//     console.log("🕒 Пришло время публиковать новый пост!");
-//     postToChannel();
-// });
+
+// Для Deno Deploy Cron Triggers:
+// https://deno.com/deploy/docs/runtime-cron-jobs
 
 // === Ручной запуск для тестирования ===
-postToChannel();
+await postToChannel();
