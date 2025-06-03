@@ -1,7 +1,7 @@
 // === Импорт зависимостей ===
 import { InferenceClient } from "npm:@huggingface/inference";
-import TelegramBot from "https://deno.land/x/telegram/mod.ts";
-import axios from "https://deno.land/x/axiod/mod.ts";
+import { TelegramBot } from "https://deno.land/x/telegram_bot/mod.ts";
+import {axiod} from "https://deno.land/x/axiod/mod.ts";
 
 // === Переменные окружения ===
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") ||
@@ -116,7 +116,7 @@ async function getRandomImageUrl() {
     };
 
     try {
-        const response = await axios.get(UNSPLASH_URL, { params });
+        const response = await axiod.get(UNSPLASH_URL, { params });
         return response.data.urls.regular;
     } catch (error) {
         console.error("🖼️ Не удалось загрузить изображение:", error.message);
