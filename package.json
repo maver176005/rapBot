@@ -1,0 +1,19 @@
+{
+  "name": "rap-poster",
+  "version": "1.0.0",
+  "description": "Telegram автопостинг для рэп-канала",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "@huggingface/inference": "^4.0.0",
+    "axios": "^1.6.2",
+    "dotenv": "^16.5.0",
+    "node-fetch": "^3.3.2",
+    "node-schedule": "^2.1.1",
+    "node-telegram-bot-api": "^0.66.0",
+    "unsplash-js": "^7.0.19"
+  }
+}
