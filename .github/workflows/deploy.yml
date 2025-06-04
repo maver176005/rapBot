@@ -8,7 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout кода
         uses: actions/checkout@v4
@@ -16,12 +15,8 @@ jobs:
       - name: Установка Deno
         run: |
           curl -fsSL https://deno.land/install.sh  | sh
-
       - name: Добавление Deno в PATH
         run: echo "$HOME/.deno/bin" >> $GITHUB_PATH
-
-      - name: Проверка версии Deno
-        run: deno --version
 
       - name: Установка deployctl
         run: |
@@ -36,4 +31,5 @@ jobs:
             --env HUGGINGFACE_API_KEY=${{ secrets.HUGGINGFACE_API_KEY }} \
             --env UNSPLASH_ACCESS_KEY=${{ secrets.UNSPLASH_ACCESS_KEY }} \
             --env CHANNEL_ID=${{ secrets.CHANNEL_ID }} \
+            --env MODEL_NAME=${{ secrets.MODEL_NAME }} \
             bot.js
