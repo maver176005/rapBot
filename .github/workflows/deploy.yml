@@ -8,23 +8,22 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout кода
         uses: actions/checkout@v4
 
       - name: Установка Deno
         run: |
-          curl -fsSL https://deno.land/install.sh  | sh
+          curl -fsSL https://deno.land/install.sh | sh
 
       - name: Добавление Deno в PATH
         run: echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
       - name: Установка deployctl
         run: |
-          deno install -gArf jsr:@deno/deployctl
+          deno install -gArf jsr:@deno/deployctl@1.13.1
 
-      - name: Деплой на Deno Deploy
+      - name: Деплой бота на Deno Deploy
         run: |
           deployctl deploy \
             --project=rap-poster-bot \
