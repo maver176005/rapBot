@@ -1,36 +1,21 @@
-// === Импорт зависимостей ==
-import { Bot } from "https://deno.land/x/grammy@v1.36.3/mod.ts";
+import { Bot } from "https://deno.land/x/grammy@v1.36/mod.ts";
 import { InferenceClient } from "npm:@huggingface/inference";
 
 // === Переменные окружения ===
-// === Импорт dotenv только для локального использования ===
-let env;
-
-if (typeof Deno !== "undefined") {
-    env = {
-        TELEGRAM_BOT_TOKEN: Deno.env.get("TELEGRAM_BOT_TOKEN"),
-        HUGGINGFACE_API_KEY: Deno.env.get("HUGGINGFACE_API_KEY"),
-        UNSPLASH_ACCESS_KEY: Deno.env.get("UNSPLASH_ACCESS_KEY"),
-        CHANNEL_ID: Deno.env.get("CHANNEL_ID"),
-        MODEL_NAME: Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324"
-    };
-} else {
-    // Для Node.js (не используется в данном случае)
-    const dotenv = require("dotenv");
-    dotenv.config();
-    env = process.env;
-}
-
-const { TELEGRAM_BOT_TOKEN, HUGGINGFACE_API_KEY, UNSPLASH_ACCESS_KEY, CHANNEL_ID, MODEL_NAME } = env;
+const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
+const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
+const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY");
+const CHANNEL_ID = Deno.env.get("CHANNEL_ID");
+const MODEL_NAME = Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324";
 
 if (!TELEGRAM_BOT_TOKEN) {
     throw new Error("Не указан TELEGRAM_BOT_TOKEN в .env или в окружении");
 }
 
-// === Инициализация бота через Grammy ===
+// === Инициализация бота ===
 const bot = new Bot(TELEGRAM_BOT_TOKEN);
 
-// === Подключение KV Storage для хранения данных ===
+// === Подключение к Deno KV Storage ===
 const kv = await Deno.openKv();
 
 // === Чтение треков и тем из KV или локальных файлов ===
@@ -75,7 +60,7 @@ async function getRandomUnusedTopic() {
     return available[Math.floor(Math.random() * available.length)];
 }
 
-// === Генерация текста про рэп ===
+// === Генерация текста про рэп через AI ===
 const hfClient = new InferenceClient(HUGGINGFACE_API_KEY);
 
 async function generateRapPost(topic) {
@@ -89,7 +74,8 @@ async function generateRapPost(topic) {
                 },
             ],
             max_tokens: 300,
-            temperature: 0.8,
+            temperature: 0.85,
+            repetition_penalty: 1.2
         });
 
         return response.choices[0].message.content.trim();
@@ -161,15 +147,14 @@ async function saveAnalytics(data) {
     await kv.set(["analytics"], data);
 }
 
-// === Генерация AI-ответа ===
+// === Генерация уникальных строк рэпа ===
 async function generateAIResponse(prompt) {
     try {
         const response = await hfClient.chatCompletion({
             model: MODEL_NAME,
             messages: [{ role: "user", content: prompt }],
-            max_tokens: 200,
-            temperature: 0.8,
-            top_p: 0.9,
+            max_tokens: 150,
+            temperature: 0.85,
             repetition_penalty: 1.2
         });
 
@@ -186,7 +171,18 @@ bot.command("start", async (ctx) => {
 });
 
 bot.command("menu", async (ctx) => {
-    await ctx.reply("Выбери, что хочешь узнать:\n\n/modelexplain — объяснение модели\n/advice — получить совет\n/lyrics любовь — написать строки");
+    const mainMenuOptions = {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: '🎤 Совет по Flow', callback_data: 'flow_advice' }],
+                [{ text: '📝 Как писать тексты', callback_data: 'writing_tips' }],
+                [{ text: '💬 Идеи для рифм', callback_data: 'rhyme_ideas' }],
+                [{ text: '🎧 Топ треков', callback_data: 'top_tracks' }],
+            ]
+        }
+    };
+
+    await ctx.reply("Выбери, что хочешь узнать:", mainMenuOptions);
 });
 
 bot.command("advice", async (ctx) => {
@@ -216,8 +212,48 @@ bot.command("lyrics", async (ctx) => {
     analytics.commands_used.lyrics += 1;
     await saveAnalytics(analytics);
 
-    const lyrics = await generateLyrics(theme);
+    // Делаем промпт более уникальным
+    const prompt = `Напиши краткую историю рэпа на тему: "${topic}". 
+                Не более 250 слов, законченная мысль.`;
+
+    const response = await hfClient.chatCompletion({
+        model: MODEL_NAME,
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+        temperature: 0.85,
+        repetition_penalty: 1.2
+    });
+
+    const lyrics = await generateAIResponse(prompt);
     await ctx.reply(`🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
+});
+
+// === Callback обработчики ===
+bot.on("callback_query", async (query) => {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    let response = '';
+
+    switch (data) {
+        case 'flow_advice':
+            response = await getFlowAdvice();
+            break;
+        case 'writing_tips':
+            response = await getWritingTips();
+            break;
+        case 'rhyme_ideas':
+            response = await getRhymeIdeas();
+            break;
+        case 'top_tracks':
+            response = `🎧 Вот топ треков:\n${tracks.map(t => `- ${t.title} → ${t.link}`).join('\n')}`;
+            break;
+        default:
+            response = 'Неизвестная команда.';
+    }
+
+    await bot.api.answerCallbackQuery(query.id);
+    await bot.api.sendMessage(chatId, response);
 });
 
 // === Генерация текста ===
@@ -225,36 +261,19 @@ async function getFlowAdvice() {
     return await generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
 }
 
-async function generateLyrics(theme) {
-    try {
-        const response = await hfClient.chatCompletion({
-            model: MODEL_NAME,
-            messages: [
-                {
-                    role: "user",
-                    content: `Напиши 5 оригинальных строк рэпа на тему "${theme}". Сделай их разными каждый раз.`
-                }
-            ],
-            max_tokens: 200,
-            temperature: 0.85,
-            repetition_penalty: 1.2
-        });
+async function getWritingTips() {
+    return await generateAIResponse("Как правильно начать писать тексты к песням? Советы для новичков.");
+}
 
-        return response.choices[0].message.content;
-    } catch (err) {
-        console.error("❌ Ошибка генерации текста:", err.message);
-        return "Не удалось сгенерировать текст.";
-    }
+async function getRhymeIdeas() {
+    return await generateAIResponse("Придумай 5 строк с рифмой на слово 'ночь'.");
 }
 
 // === Запуск бота ===
 if (import.meta.main) {
-    // Только если запущен как основной файл
     await bot.start();
     console.log("⏰ Бот запущен и ожидает...");
 
-    // Подписываемся на обновления
-    bot.on("message", async (ctx) => {
-        console.log(`📩 Сообщение от ${ctx.from?.username}: ${ctx.message.text}`);
-    });
+    // === Тестовый пост ===
+    await postToChannel();
 }
