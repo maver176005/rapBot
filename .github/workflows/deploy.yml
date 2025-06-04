@@ -25,7 +25,7 @@ jobs:
 
       - name: Установка deployctl
         run: |
-          deno install -gArf jsr:@deno/deployctl@0.2.0
+          deno install -gArf jsr:@deno/deployctl
 
       - name: Деплой на Deno Deploy
         run: |
