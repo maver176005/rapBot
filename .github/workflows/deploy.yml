@@ -26,7 +26,7 @@ jobs:
       - name: Деплой на Deno Deploy
         run: |
           deployctl deploy \
-            --project=rapbot \
+            --project=rap-poster-bot \
             --token=${{ secrets.DENO_DEPLOY_TOKEN }} \
             --env TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }} \
             --env HUGGINGFACE_API_KEY=${{ secrets.HUGGINGFACE_API_KEY }} \

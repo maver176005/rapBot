@@ -6,12 +6,7 @@ import { InferenceClient } from "npm:@huggingface/inference";
 // === Импорт dotenv только для локального использования ===
 let env;
 
-if (typeof Deno !== "undefined" && Deno.args.includes("--local")) {
-    // Только если запущен локально с --local
-    const dotenv = require("https://deno.land/std@0.208.0/dotenv/mod.ts");
-    env = await dotenv.load({ path: "./.env" });
-} else {
-    // На Deno Deploy используем Deno.env
+if (typeof Deno !== "undefined") {
     env = {
         TELEGRAM_BOT_TOKEN: Deno.env.get("TELEGRAM_BOT_TOKEN"),
         HUGGINGFACE_API_KEY: Deno.env.get("HUGGINGFACE_API_KEY"),
@@ -19,14 +14,14 @@ if (typeof Deno !== "undefined" && Deno.args.includes("--local")) {
         CHANNEL_ID: Deno.env.get("CHANNEL_ID"),
         MODEL_NAME: Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324"
     };
+} else {
+    // Для Node.js (не используется в данном случае)
+    const dotenv = require("dotenv");
+    dotenv.config();
+    env = process.env;
 }
 
-// === Переменные окружения ===
-const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
-const HUGGINGFACE_API_KEY = env.HUGGINGFACE_API_KEY;
-const UNSPLASH_ACCESS_KEY = env.UNSPLASH_ACCESS_KEY;
-const CHANNEL_ID = env.CHANNEL_ID;
-const MODEL_NAME = env.MODEL_NAME;
+const { TELEGRAM_BOT_TOKEN, HUGGINGFACE_API_KEY, UNSPLASH_ACCESS_KEY, CHANNEL_ID, MODEL_NAME } = env;
 
 if (!TELEGRAM_BOT_TOKEN) {
     throw new Error("Не указан TELEGRAM_BOT_TOKEN в .env или в окружении");
@@ -232,8 +227,13 @@ async function generateLyrics(theme) {
 }
 
 // === Запуск бота ===
-await bot.start();
-console.log("⏰ Бот запущен и ожидает...");
+if (import.meta.main) {
+    // Только если запущен как основной файл
+    await bot.start();
+    console.log("⏰ Бот запущен и ожидает...");
 
-// === Тестовый пост ===
-await postToChannel();
+    // Подписываемся на обновления
+    bot.on("message", async (ctx) => {
+        console.log(`📩 Сообщение от ${ctx.from?.username}: ${ctx.message.text}`);
+    });
+}
