@@ -167,7 +167,10 @@ async function generateAIResponse(prompt) {
         const response = await hfClient.chatCompletion({
             model: MODEL_NAME,
             messages: [{ role: "user", content: prompt }],
-            max_tokens: 150,
+            max_tokens: 200,
+            temperature: 0.8,
+            top_p: 0.9,
+            repetition_penalty: 1.2
         });
 
         return response.choices[0].message.content;
@@ -223,7 +226,25 @@ async function getFlowAdvice() {
 }
 
 async function generateLyrics(theme) {
-    return await generateAIResponse(`Напиши несколько строчек рэпа на тему: ${theme}`);
+    try {
+        const response = await hfClient.chatCompletion({
+            model: MODEL_NAME,
+            messages: [
+                {
+                    role: "user",
+                    content: `Напиши 5 оригинальных строк рэпа на тему "${theme}". Сделай их разными каждый раз.`
+                }
+            ],
+            max_tokens: 200,
+            temperature: 0.85,
+            repetition_penalty: 1.2
+        });
+
+        return response.choices[0].message.content;
+    } catch (err) {
+        console.error("❌ Ошибка генерации текста:", err.message);
+        return "Не удалось сгенерировать текст.";
+    }
 }
 
 // === Запуск бота ===
