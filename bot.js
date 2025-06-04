@@ -1,16 +1,17 @@
 // === Импорт зависимостей ===
 import * as dotenv from "https://deno.land/std@0.208.0/dotenv/mod.ts";
-await dotenv.load(); // загружаем .env в Deno.env
+const env = await dotenv.load({ path: "./.env" });
 
 import { Bot } from "https://deno.land/x/grammy@v1.36.3/mod.ts";
 import { InferenceClient } from "npm:@huggingface/inference";
 
 // === Переменные окружения ===
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
-const HUGGINGFACE_API_KEY = Deno.env.get("HUGGINGFACE_API_KEY");
-const UNSPLASH_ACCESS_KEY = Deno.env.get("UNSPLASH_ACCESS_KEY");
-const CHANNEL_ID = Deno.env.get("CHANNEL_ID");
-const MODEL_NAME = Deno.env.get("MODEL_NAME") || "deepseek-ai/DeepSeek-V3-0324";
+
+const TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN;
+const HUGGINGFACE_API_KEY = env.HUGGINGFACE_API_KEY;
+const UNSPLASH_ACCESS_KEY = env.UNSPLASH_ACCESS_KEY;
+const CHANNEL_ID = env.CHANNEL_ID;
+const MODEL_NAME = env.MODEL_NAME || "deepseek-ai/DeepSeek-V3-0324";
 
 if (!TELEGRAM_BOT_TOKEN) {
     throw new Error("Не указан TELEGRAM_BOT_TOKEN в .env");
@@ -22,7 +23,7 @@ const bot = new Bot(TELEGRAM_BOT_TOKEN);
 // === Подключение KV Storage для хранения данных ===
 const kv = await Deno.openKv();
 
-// === Чтение треков и тем из KV или fallback к локальным файлам ===
+// === Чтение треков и тем из KV или локальных файлов ===
 let tracks = [];
 let topics = [];
 
@@ -30,10 +31,9 @@ try {
     const tracksEntry = await kv.get(["tracks"]);
     const topicsEntry = await kv.get(["topics"]);
 
-    tracks = tracksEntry.value || JSON.parse(Deno.readTextFileSync("tracks.json"));
-    topics = topicsEntry.value || JSON.parse(Deno.readTextFileSync("topics.json"));
+    tracks = tracksEntry.value || JSON.parse(await Deno.readTextFile("tracks.json"));
+    topics = topicsEntry.value || JSON.parse(await Deno.readTextFile("topics.json"));
 
-    // Сохраняем в KV, чтобы не читать каждый раз файлы
     await kv.set(["tracks"], tracks);
     await kv.set(["topics"], topics);
 } catch (e) {
@@ -89,7 +89,7 @@ async function generateRapPost(topic) {
     }
 }
 
-// === Получение случайного изображения с Unsplash (через fetch) ===
+// === Получение случайного изображения с Unsplash ===
 async function getRandomImageUrl() {
     const UNSPLASH_URL = "https://api.unsplash.com/photos/random";
     const params = new URLSearchParams({
@@ -167,26 +167,13 @@ async function generateAIResponse(prompt) {
     }
 }
 
-// === Генерация советов ===
-async function getFlowAdvice() {
-    return await generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
-}
-
-async function getWritingTips() {
-    return await generateAIResponse("Как правильно начать писать тексты к песням? Советы для новичков.");
-}
-
-async function getRhymeIdeas() {
-    return await generateAIResponse("Придумай 5 строк с рифмой на слово 'ночь'.");
-}
-
 // === Команды бота ===
 bot.command("start", async (ctx) => {
     await ctx.reply("👋 Привет! Я могу дать тебе советы по рэпу, генерировать тексты и публиковать посты в канал.");
 });
 
 bot.command("menu", async (ctx) => {
-    await ctx.reply("Выбери, что хочешь узнать:");
+    await ctx.reply("Выбери, что хочешь узнать:\n\n/modelexplain — объяснение модели\n/advice — получить совет\n/lyrics любовь — написать строки");
 });
 
 bot.command("advice", async (ctx) => {
@@ -220,25 +207,18 @@ bot.command("lyrics", async (ctx) => {
     await ctx.reply(`🎵 Вот строки по теме "${theme}":\n\n${lyrics}`);
 });
 
+// === Генерация текста ===
+async function getFlowAdvice() {
+    return await generateAIResponse("Дай совет начинающему рэперу по развитию уникального flow.");
+}
+
 async function generateLyrics(theme) {
-    try {
-        const response = await hfClient.chatCompletion({
-            model: MODEL_NAME,
-            messages: [{role: "user", content: `Напиши несколько строчек рэпа на тему: ${theme}`}],
-            max_tokens: 200,
-        });
-
-        return response.choices[0].message.content;
-    } catch (err) {
-        console.error("❌ Ошибка генерации текста:", err.message);
-        return "Не удалось сгенерировать текст.";
-    }
-
+    return await generateAIResponse(`Напиши несколько строчек рэпа на тему: ${theme}`);
+}
 
 // === Запуск бота ===
-    await bot.start();
-    console.log("⏰ Бот запущен и ожидает...");
+await bot.start();
+console.log("⏰ Бот запущен и ожидает...");
 
-// Для тестирования:
-    await postToChannel();
-}
+// === Тестовый пост ===
+await postToChannel();

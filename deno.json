@@ -1,7 +1,8 @@
 {
+  "exclude": ["node_modules", ".git"],
+  "importMap": "import_map.json",
   "tasks": {
     "start": "deno run --allow-env --allow-net --allow-read bot.js"
   },
-  "importMap": "import_map.json",
   "lock": true
 }

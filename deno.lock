@@ -95,6 +95,9 @@
     "https://deno.land/x/url_join@1.0.0/mod.ts": "d3c7007e3ab15594e54d5b90dce623b3e274a726e0cdf57858e7ecab77a0166c"
   },
   "workspace": {
+    "dependencies": [
+      "npm:@huggingface/inference@*"
+    ],
     "packageJson": {
       "dependencies": [
         "npm:@huggingface/inference@4",
